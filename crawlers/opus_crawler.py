@@ -1,22 +1,27 @@
 # Crawler for the files in OPUS
-# Collects tar.gz in each language folder
+# Collects tar.gz and unpacks the xml files into each language folder
 
 import requests, re, os
 import urllib3
 import gzip
 import shutil
 import tarfile
+import ssl
+import time
+from requests.exceptions import Timeout, ConnectionError
+from urllib3.exceptions import ReadTimeoutError
 
 # Quechua languages, qu (?)
 # Songhai languages, son (?)
 
-# 2x Basque, Basque, Berber, Burmese, Chamorro, 2x English,
+# 2x Basque, Berber, Burmese, Chamorro, 2x English,
 # 2x French, Georgian, 2x German, Greek, Greenlandic (Kalaallisut),
 # Guarani, Hausa, Hebrew, 2x Hindi, Indonesian, 2x Japanese,
 # Kannada, Khalkha (Mongolian), Korean, Malagasy,
 # 4x Mandarin, Mapudungun, Oromo, 2x Persian, Russian,
 # 2x Spanish, Swahili, Tagalog, Thai,
 # Turkish, Vietnamese, Yoruba, Zulu
+
 
 lang_dic = {
     'eu_ES': 'Basque',
@@ -89,9 +94,9 @@ def list_links(links):
 
 # Create folders for each language
 def create_dir(lang):
-    root = 'OPUS/'
-    root_path = 'OPUS/' + lang_dic[lang]
-    embedded_path = 'OPUS/' + lang_dic[lang] + '/' + lang
+    root = '../OPUS/'
+    root_path = '../OPUS/' + lang_dic[lang]
+    embedded_path = '../OPUS/' + lang_dic[lang] + '/' + lang
     if not os.path.isdir(root):
         os.mkdir(root)
     if not os.path.isdir(root_path):
@@ -101,44 +106,53 @@ def create_dir(lang):
 
 # Define filenames to save
 def define_fname(lang, url, counter):
-    dir = 'OPUS/' + lang_dic[lang] + '/' + lang
-    find_name = re.search('%2F(' + lang + '\.raw\.tar\.gz)', url)
+    dir = '../OPUS/' + lang_dic[lang] + '/' + lang
+    find_name = re.search('f=(.*)%2F(' + lang + '\.raw\.tar\.gz)', url)
     if find_name is not None:
-        fname = dir + '/' + str(counter) + '_' + find_name.group(1)
+        fname = dir + '/' + str(counter) + '_' + find_name.group(2)
+        file_cat = find_name.group(1)
         print(fname)
-        return fname
+        return fname, file_cat
 
 # Get request to obtain *.tar.gz files
 def get_file(url, fname):
-    http = urllib3.PoolManager()
+    try:
+        http = urllib3.PoolManager()
+    except (Timeout, ssl.SSLError, ReadTimeoutError, ConnectionError) as exc:
+        time.sleep(30)
+        http = urllib3.PoolManager()
     r = http.request('GET', url, preload_content=False, headers={'User-Agent': 'Mozilla/5.0'})
-    with open(fname, 'wb') as out:
+    CHUNK = 16 * 1024
+    with open(fname, 'wb') as fp:
         while True:
-            data = r.read()
-            if not data:
-                break
-            out.write(data)
+            chunk = r.read(CHUNK)
+            if not chunk: break
+            fp.write(chunk)
     r.release_conn()
 
 # Untar *.tar.gz files
 def untar(fname, lang, counter):
     tar = tarfile.open(fname)
     with tarfile.open(fname) as tar:
-        path = 'OPUS/' + lang_dic[lang] + '/' + lang + '/' + str(counter)
+        path = '../OPUS/' + lang_dic[lang] + '/' + lang + '/' + str(counter)
         if not os.path.isdir(path):
             os.mkdir(path)
             tar.extractall(path=path)
     os.remove(fname)
 
 # Gunzip *.xml.gz files
-def gunzip(lang, counter):
-    initial_path = 'OPUS/' + lang_dic[lang] + '/' + lang
+def gunzip(file_cat, lang, counter):
+    initial_path = '../OPUS/' + lang_dic[lang] + '/' + lang
     for root, dirs, files in os.walk(initial_path + '/' + str(counter)):
         for name in files:
             if name.endswith('gz'):
                 filename = os.path.join(root,name)
                 with gzip.open(filename, 'rb') as f_in:
-                    xml_name = initial_path + '/' + str(counter) + '_' + name[:-7]
+                    if not os.path.isdir(initial_path + '/' + file_cat):
+                        os.mkdir(initial_path + '/' + file_cat)
+                    if not os.path.isdir(initial_path + '/' + file_cat + '/' + str(counter)):
+                        os.mkdir(initial_path + '/' + file_cat + '/' + str(counter))
+                    xml_name = initial_path + '/' + file_cat + '/' + str(counter) + '/' + str(counter) + '_' + name[:-7]
                     with open(xml_name + '.xml', 'wb') as f_out:
                         shutil.copyfileobj(f_in, f_out)
                         print('GUNZIP FILE: ' + xml_name + '.xml')
@@ -150,10 +164,12 @@ def download(lang, links):
     for link in links:
         url = 'http://opus.nlpl.eu/' + link
         print('DOWNLOAD: ' + url)
-        fname = define_fname(lang, url, counter)
+        fname_cat = define_fname(lang, url, counter)
+        fname = fname_cat[0]
+        file_cat = fname_cat[1]
         get_file(url, fname)
         untar(fname, lang, counter)
-        gunzip(lang, counter)
+        gunzip(file_cat, lang, counter)
         counter += 1
 
 def main():
