@@ -5,11 +5,16 @@ import requests, re, os
 import urllib3
 import gzip
 import shutil
+import codecs
 import tarfile
 import ssl
 import time
+import random
+from lxml import etree
 from requests.exceptions import Timeout, ConnectionError
 from urllib3.exceptions import ReadTimeoutError
+
+amount_tokens = 50000
 
 # Quechua languages, qu (?)
 # Songhai languages, son (?)
@@ -22,55 +27,56 @@ from urllib3.exceptions import ReadTimeoutError
 # 2x Spanish, Swahili, Tagalog, Thai,
 # Turkish, Vietnamese, Yoruba, Zulu
 
+prefix = '../data/OPUS/'
 
 lang_dic = {
-    'eu_ES': 'Basque',
-    'eu': 'Basque',
-    'ber': 'Berber',
-    'my': 'Burmese',
-    'ch': 'Chamorro',
-    'en': 'English',
-    'en_GB': 'English',
-    'fr': 'French',
-    'fr_FR': 'French',
-    'ka': 'Georgian',
-    'de': 'German',
-    'de_DE': 'German',
-    'el': 'Greek',
-    'kl': 'Greenlandic',
-    'gn': 'Guarani',
-    'ha': 'Hausa',
-    'he': 'Hebrew',
-    'hi': 'Hindi',
-    'hi_IN': 'Hindi',
-    'id': 'Indonesian',
-    'jp': 'Japanese',
-    'ja': 'Japanese',
-    'kn': 'Kannada',
-    'mn': 'Khalkha',
-    'ko': 'Korean',
-    'mg': 'Malagasy',
-    'zh': 'Mandarin',
-    'zh_zh': 'Mandarin',
-    'zh_cn': 'Mandarin',
-    'zh_CN': 'Mandarin',
-    'arn': 'Mapudungun',
-    'om': 'Oromo',
-    'fa': 'Persian',
-    'fa_IR': 'Persian',
-    'ru': 'Russian',
-    'es': 'Spanish',
-    'es_ES': 'Spanish',
-    'sw': 'Swahili',
-    'tl': 'Tagalog',
-    'tl_PH': 'Tagalog',
-    'th': 'Thai',
-    'tr': 'Turkish',
-    'tr_TR': 'Turkish',
-    'vi': 'Vietnamese',
-    'vi_VN': 'Vietnamese',
-    'yo': 'Yoruba',
-    'zu': 'Zulu'
+#     'eu_ES': 'Basque (eus)',
+#     'eu': 'Basque (eus)',
+#     'ber': 'Berber (tzm)',
+#     'my': 'Burmese (mya)',
+     'ch': 'Chamorro (cha)',
+#     'en': 'English (eng)',
+#     'en_GB': 'English (eng)',
+#     'fr': 'French (fra)',
+#     'fr_FR': 'French (fra)',
+#     'ka': 'Georgian (kat)',
+#     'de': 'German (deu)',
+#     'de_DE': 'German (deu)',
+#     'el': 'Greek (ell)',
+#     'kl': 'Greenlandic (kal)',
+#     'gn': 'Guarani (gug)',
+#     'ha': 'Hausa (hau)',
+#     'he': 'Hebrew (heb)',
+#     'hi': 'Hindi (hin)',
+#     'hi_IN': 'Hindi (hin)',
+#     'id': 'Indonesian (ind)',
+#     'jp': 'Japanese (jpn)',
+#     'ja': 'Japanese (jpn)',
+#     'kn': 'Kannada (kan)',
+#     'mn': 'Khalkha (khk)',
+#     'ko': 'Korean (kor)',
+#     'mg': 'Malagasy (plt)',
+#     'zh': 'Mandarin (cmn)',
+#     'zh_zh': 'Mandarin (cmn)',
+#     'zh_cn': 'Mandarin (cmn)',
+#     'zh_CN': 'Mandarin (cmn)',
+#     'arn': 'Mapudungun (arn)',
+#     'om': 'Oromo (hae)',
+#     'fa': 'Persian (pes)',
+#     'fa_IR': 'Persian (pes)',
+#     'ru': 'Russian (rus)',
+#     'es': 'Spanish (spa)',
+#     'es_ES': 'Spanish (spa)',
+#     'sw': 'Swahili (swh)',
+#     'tl': 'Tagalog (tgl)',
+#     'tl_PH': 'Tagalog (tgl)',
+#     'th': 'Thai (tha)',
+#     'tr': 'Turkish (tur)',
+#     'tr_TR': 'Turkish (tur)',
+#     'vi': 'Vietnamese (vie)',
+#     'vi_VN': 'Vietnamese (vie)',
+#     'yo': 'Yoruba (yor)',
+#     'zu': 'Zulu (zul)'
 }
 
 # Request HTML page for the current language
@@ -94,9 +100,9 @@ def list_links(links):
 
 # Create folders for each language
 def create_dir(lang):
-    root = '../OPUS/'
-    root_path = '../OPUS/' + lang_dic[lang]
-    embedded_path = '../OPUS/' + lang_dic[lang] + '/' + lang
+    root = prefix
+    root_path = prefix + lang_dic[lang]
+    embedded_path = prefix + lang_dic[lang] + '/' + lang
     if not os.path.isdir(root):
         os.mkdir(root)
     if not os.path.isdir(root_path):
@@ -106,7 +112,7 @@ def create_dir(lang):
 
 # Define filenames to save
 def define_fname(lang, url, counter):
-    dir = '../OPUS/' + lang_dic[lang] + '/' + lang
+    dir = prefix + lang_dic[lang] + '/' + lang
     find_name = re.search('f=(.*)%2F(' + lang + '\.raw\.tar\.gz)', url)
     if find_name is not None:
         fname = dir + '/' + str(counter) + '_' + find_name.group(2)
@@ -134,7 +140,7 @@ def get_file(url, fname):
 def untar(fname, lang, counter):
     tar = tarfile.open(fname)
     with tarfile.open(fname) as tar:
-        path = '../OPUS/' + lang_dic[lang] + '/' + lang + '/' + str(counter)
+        path = prefix + lang_dic[lang] + '/' + lang + '/' + str(counter)
         if not os.path.isdir(path):
             os.mkdir(path)
             tar.extractall(path=path)
@@ -142,7 +148,7 @@ def untar(fname, lang, counter):
 
 # Gunzip *.xml.gz files
 def gunzip(file_cat, lang, counter):
-    initial_path = '../OPUS/' + lang_dic[lang] + '/' + lang
+    initial_path = prefix + lang_dic[lang] + '/' + lang
     for root, dirs, files in os.walk(initial_path + '/' + str(counter)):
         for name in files:
             if name.endswith('gz'):
@@ -158,12 +164,84 @@ def gunzip(file_cat, lang, counter):
                         print('GUNZIP FILE: ' + xml_name + '.xml')
     shutil.rmtree(initial_path + '/' + str(counter))
 
+# How many XML files are there for this language
+def count_amount(lang):
+    path = prefix + lang_dic[lang] + '/' + lang
+    amount_files = 0
+    amount_dirs = 0
+    list_dirs = []
+    list_files = []
+    numbers = re.compile('^[0-9]+$')
+    for root, dirs, files in os.walk(path):
+        for dir in dirs:
+            number_name = re.search(numbers, dir)
+            if number_name is not None:
+                amount_dirs += 1
+                list_dirs.append(os.path.join(root, dir))
+        for name in files:
+            if name.endswith('xml'):
+                amount_files += 1
+                list_files.append(os.path.join(root, name))
+    per_dir = amount_tokens / amount_dirs
+    per_file = amount_tokens / amount_files
+    print('TOKENS PER DIR: %d' % per_dir)
+    print('TOKENS PER FILE: %d' % per_file)
+    return per_dir, per_file, list_dirs, list_files
+
+# Parse text from XML
+def parse_xml(xml):
+    root = etree.fromstring(xml)
+    sentences = []
+    amount_tokens = 0
+    for el in root.iter():
+        current_tokens = el.text.lower().split()
+        sentences.append(current_tokens)
+        amount_tokens += len(current_tokens)
+    print sentences, amount_tokens
+
+def parse(lang, per_dir, per_file, list_dirs, list_files):
+
+    tokens_files = 0
+    used_dirs = set([])
+    used_files = set([])
+    path = prefix + lang_dic[lang] + '/' + lang
+
+
+    while tokens_files <= amount_tokens and len(list_files) != len(used_files):
+
+        tokens_dirs = 0
+        while tokens_dirs <= per_dir and len(list_dirs) != len(used_dirs):
+            random_dir = random.choice(list_dirs)
+            current_files = [f for f in os.listdir(random_dir) if os.path.isfile(os.path.join(random_dir, f))]
+            for file in current_files:
+                print(file)
+                current_file = os.path.join(random_dir, file)
+                with open(current_file, 'rb') as f:
+                    xml = f.read()
+                    parsed = parse_xml(xml)
+                    print parsed
+                #
+                #     if parsed[1] <= per_file:
+                #         result = parsed[0]
+                #
+                #     tokens_dirs += parsed[1]
+                #     tokens_files += parsed[1]
+                #
+                # used_files.add(file)
+
+            used_dirs.add(random_dir)
+
+
+    print('TOKENS GATHERED: %d' % tokens_files)
+
+
+
 # Download, gunzip, place nicely into the folder
 def download(lang, links):
     counter = 1
     for link in links:
         url = 'http://opus.nlpl.eu/' + link
-        print('DOWNLOAD: ' + url)
+        print('DOWNLOADING: ' + url)
         fname_cat = define_fname(lang, url, counter)
         fname = fname_cat[0]
         file_cat = fname_cat[1]
@@ -171,6 +249,15 @@ def download(lang, links):
         untar(fname, lang, counter)
         gunzip(file_cat, lang, counter)
         counter += 1
+
+    amount = count_amount(lang)
+    per_dir = amount[0]
+    per_file = amount[1]
+    list_dirs = amount[2]
+    list_files = amount[3]
+
+    parse(lang, per_dir, per_file, list_dirs, list_files)
+
 
 def main():
     for lang in lang_dic:
@@ -181,4 +268,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
