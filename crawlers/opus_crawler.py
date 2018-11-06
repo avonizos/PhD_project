@@ -197,7 +197,7 @@ def parse_xml(xml):
         current_tokens = el.text.lower().split()
         sentences.append(current_tokens)
         amount_tokens += len(current_tokens)
-    print sentences, amount_tokens
+    return sentences, amount_tokens
 
 def parse(lang, per_dir, per_file, list_dirs, list_files):
 
@@ -219,15 +219,14 @@ def parse(lang, per_dir, per_file, list_dirs, list_files):
                 with open(current_file, 'rb') as f:
                     xml = f.read()
                     parsed = parse_xml(xml)
-                    print parsed
-                #
-                #     if parsed[1] <= per_file:
-                #         result = parsed[0]
-                #
-                #     tokens_dirs += parsed[1]
-                #     tokens_files += parsed[1]
-                #
-                # used_files.add(file)
+
+                    if parsed[1] <= per_file:
+                        result = parsed[0]
+
+                    tokens_dirs += parsed[1]
+                    tokens_files += parsed[1]
+
+                used_files.add(file)
 
             used_dirs.add(random_dir)
 
