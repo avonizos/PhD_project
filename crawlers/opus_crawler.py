@@ -34,7 +34,7 @@ lang_dic = {
 #     'eu': 'Basque (eus)',
 #     'ber': 'Berber (tzm)',
 #     'my': 'Burmese (mya)',
-     'ch': 'Chamorro (cha)',
+#     'ch': 'Chamorro (cha)',
 #     'en': 'English (eng)',
 #     'en_GB': 'English (eng)',
 #     'fr': 'French (fra)',
@@ -61,7 +61,7 @@ lang_dic = {
 #     'zh_cn': 'Mandarin (cmn)',
 #     'zh_CN': 'Mandarin (cmn)',
 #     'arn': 'Mapudungun (arn)',
-#     'om': 'Oromo (hae)',
+     'om': 'Oromo (hae)',
 #     'fa': 'Persian (pes)',
 #     'fa_IR': 'Persian (pes)',
 #     'ru': 'Russian (rus)',
@@ -162,7 +162,8 @@ def gunzip(file_cat, lang, counter):
                     with open(xml_name + '.xml', 'wb') as f_out:
                         shutil.copyfileobj(f_in, f_out)
                         print('GUNZIP FILE: ' + xml_name + '.xml')
-    shutil.rmtree(initial_path + '/' + str(counter))
+    print(initial_path + '/' + str(counter))
+    shutil.rmtree(initial_path + '/' + str(counter), ignore_errors=True)
 
 # How many XML files are there for this language
 def count_amount(lang):
@@ -182,8 +183,8 @@ def count_amount(lang):
             if name.endswith('xml'):
                 amount_files += 1
                 list_files.append(os.path.join(root, name))
-    per_dir = amount_tokens / amount_dirs
-    per_file = amount_tokens / amount_files
+    per_dir = round(amount_tokens / amount_dirs)
+    per_file = round(amount_tokens / amount_files)
     print('TOKENS PER DIR: %d' % per_dir)
     print('TOKENS PER FILE: %d' % per_file)
     return per_dir, per_file, list_dirs, list_files
@@ -194,50 +195,120 @@ def parse_xml(xml):
     sentences = []
     amount_tokens = 0
     for el in root.iter():
-        current_tokens = el.text.lower().split()
-        sentences.append(current_tokens)
-        amount_tokens += len(current_tokens)
+        if el.text is not None:
+            if '\n' not in el.text:
+                data = el.text.split(' ')
+                sentences.append(data)
+                amount_tokens += len(data)
     return sentences, amount_tokens
 
 def parse(lang, per_dir, per_file, list_dirs, list_files):
-
     tokens_files = 0
-    used_dirs = set([])
-    used_files = set([])
+    used_dirs = 0
+    used_files = 0
     path = prefix + lang_dic[lang] + '/' + lang
+    csv_file = codecs.open('opus_lang_tokens.csv', 'w', 'utf-8')
+    csv_file.write('language;tokens\n')
 
-
-    while tokens_files <= amount_tokens and len(list_files) != len(used_files):
-
+    while (tokens_files <= amount_tokens and len(list_files) > used_files) and (len(list_files) > 0):
         tokens_dirs = 0
-        while tokens_dirs <= per_dir and len(list_dirs) != len(used_dirs):
-            random_dir = random.choice(list_dirs)
-            current_files = [f for f in os.listdir(random_dir) if os.path.isfile(os.path.join(random_dir, f))]
-            for file in current_files:
-                print(file)
-                current_file = os.path.join(random_dir, file)
-                with open(current_file, 'rb') as f:
-                    xml = f.read()
-                    parsed = parse_xml(xml)
+        print('TOKEN FILES:', tokens_files)
+        print('LIST FILES:', len(list_files))
+        print('USED FILES', used_files)
+        random_dir = random.choice(list_dirs)
+        flag = False
+        for dirpath, dirnames, files in os.walk(random_dir):
+            if files:
+                flag = True
+        while tokens_dirs <= per_dir and (len(list_dirs) > 0):
+            if flag == True:
+                print('LIST DIRS', len(list_dirs))
+                print('USED DIRS', used_dirs)
+                current_files = [f for f in os.listdir(random_dir) if os.path.isfile(os.path.join(random_dir, f))]
+                result = []
+                if len(current_files) > 0:
+                    random_file = random.choice(current_files)
+                    current_file = os.path.join(random_dir, random_file)
+                    with open(current_file, 'rb') as f:
+                        xml = f.read()
+                        parsed = parse_xml(xml)
+                        result += parsed[0]
+                        if parsed[1] <= per_file:
+                            tokens_files += parsed[1]
+                            tokens_dirs += parsed[1]
+                            print('CURRENT FILE: %d TOKENS, %s' % (parsed[1], current_file))
+                        else:
+                            counter = 0
+                            while counter < per_file:
+                                random_line = random.randint(0, len(parsed[0])-1)
+                                result += parsed[0][random_line]
+                                tokens_files += len(parsed[0][random_line])
+                                tokens_dirs += len(parsed[0][random_line])
+                                print('CURRENT FILE: %d TOKENS, %s' % (len(parsed[0][random_line]), current_file))
+                                counter += len(parsed[0][random_line])
+                    used_files += 1
+                    os.remove(current_file)
+                    list_files.remove(current_file)
+                    parent_dir = os.path.abspath(os.path.join(random_dir, os.pardir))
+                    if os.path.exists(os.path.join(parent_dir, 'sample.txt')):
+                        f = codecs.open(os.path.join(parent_dir, 'sample.txt'), 'a', 'utf-8')
+                    else:
+                        f = codecs.open(os.path.join(parent_dir, 'sample.txt'), 'w', 'utf-8')
 
-                    if parsed[1] <= per_file:
-                        result = parsed[0]
+                    for i in range(len(result)):
+                        str_line = ''
+                        if isinstance(result[i], list) and len(result[i]) > 0:
+                            str_line += ' '.join(result[i])
+                        elif isinstance(result[i], str) and result[i] != '':
+                            str_line = result[i]
+                        if str_line != '\n' and str_line != '':
+                            f.write(str_line)
+                        if i != len(result)-1 and len(str_line) > 0:
+                            f.write('\n')
+                    f.close()
 
-                    tokens_dirs += parsed[1]
-                    tokens_files += parsed[1]
+                    flag = False
+                    for dirpath, dirnames, files in os.walk(random_dir):
+                        if files:
+                            flag = True
+                else:
+                    used_dirs += 1
+                    shutil.rmtree(random_dir)
+                    list_dirs.remove(random_dir)
+                    random_dir = random.choice(list_dirs)
+                    print(random_dir)
+                    flag = False
+                    for dirpath, dirnames, files in os.walk(random_dir):
+                        if files:
+                            flag = True
+            else:
+                used_dirs += 1
+                shutil.rmtree(random_dir)
+                list_dirs.remove(random_dir)
+                random_dir = random.choice(list_dirs)
+                print(random_dir)
+                flag = False
+                for dirpath, dirnames, files in os.walk(random_dir):
+                    if files:
+                        flag = True
 
-                used_files.add(file)
-
-            used_dirs.add(random_dir)
-
-
+        if tokens_dirs == 0:
+            break
     print('TOKENS GATHERED: %d' % tokens_files)
+    csv_file.write(lang + ';' + str(tokens_files) + '\n')
 
-
+def parse_all(lang):
+    amount = count_amount(lang)
+    per_dir = amount[0]
+    per_file = amount[1]
+    list_dirs = amount[2]
+    list_files = amount[3]
+    parse(lang, per_dir, per_file, list_dirs, list_files)
 
 # Download, gunzip, place nicely into the folder
 def download(lang, links):
     counter = 1
+    print('TOTAL ARCHIVES: %d' % len(links))
     for link in links:
         url = 'http://opus.nlpl.eu/' + link
         print('DOWNLOADING: ' + url)
@@ -249,21 +320,16 @@ def download(lang, links):
         gunzip(file_cat, lang, counter)
         counter += 1
 
-    amount = count_amount(lang)
-    per_dir = amount[0]
-    per_file = amount[1]
-    list_dirs = amount[2]
-    list_files = amount[3]
-
-    parse(lang, per_dir, per_file, list_dirs, list_files)
-
-
 def main():
     for lang in lang_dic:
         html = request(lang)
         links = list_links(find_links(lang, html))
         create_dir(lang)
         download(lang, links)
+        print("FINISHED COLLECTING DOCUMENTS")
+        print("\nSTART SAMPLING")
+        parse_all(lang)
+        print('SAMPLING DONE\n')
 
 if __name__ == "__main__":
     main()
