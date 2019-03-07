@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 # Crawler for OPUS OpenSubtitles
 # Gathers *.zip files, samples from them, stores *.txt and *.xml
 # 100 samples
@@ -34,26 +36,26 @@ from io import StringIO, BytesIO
 #'yo': ['Yoruba (yor)', 'yor', 'yor', 'yoru1245'],
 #'zu': ['Zulu (zul)', 'zul', 'zul', 'zulu1248']
 
-# OPUS code : folder name, iso, wals, glotto
+# OPUS code : folder name, iso, name_wals, name_glotto
 lang_dic = {
-    # 'eu': ['Basque (eus)', 'eus', 'bsq', 'basq1248'],
-    # 'en': ['English (eng)', 'eng', 'eng', 'stan1293'],
-    # 'fi': ['Finnish (fin)', 'fin', 'fin', 'finn1318'],
-    # 'fr': ['French (fra)', 'fra', 'fre', 'stan1290'],
-    # 'ka': ['Georgian (kat)', 'kat', 'geo', 'nucl1302'],
-    # 'de': ['German (deu)', 'deu', 'ger', 'stan1295'],
-    # 'el': ['Greek_Modern (ell)', 'ell', 'grk', 'mode1248'],
-    # 'he': ['Hebrew_Modern (heb)', 'heb', 'heb', 'hebr1245'],
-    # 'hi': ['Hindi (hin)', 'hin', 'hin', 'hind1269'],
-    # 'id': ['Indonesian (ind)', 'ind', 'ind', 'indo1316'],
-    # 'ja': ['Japanese (jpn)', 'jpn', 'jpn', 'nucl1643'],
-    # 'ko': ['Korean (kor)', 'kor', 'kor', 'kore1280'],
-    # 'zh': ['Mandarin (cmn)', 'cmn', 'mnd', 'mand1415'],
-    # 'fa': ['Persian (pes)', 'pes', 'prs', 'west2369'],
-    # 'ru': ['Russian (rus)', 'rus', 'rus', 'russ1263'],
-    # 'es': ['Spanish (spa)', 'spa', 'spa', 'stan1288'],
-    # 'sw': ['Swahili (swh)', 'swh', 'swa', 'swah1253'],
-    'tl': ['Tagalog_tgl', 'tgl', 'tag', 'taga1270']
+    'eu': ['Basque_eus', 'eus', 'Basque', 'Basque', 'Latn'],
+    'en': ['English_eng', 'English', 'English', 'Latn'],
+    'fi': ['Finnish_fin', 'Finnish', 'Finnish', 'Latn'],
+    'fr': ['French_fra', 'French', 'French', 'Latn'],
+    'ka': ['Georgian_kat', 'Georgian', 'Georgian', 'Geor'],
+    'de': ['German_deu', 'German', 'German', 'Latn'],
+    'el': ['Greek_Modern_ell', 'Greek (Modern)', 'Modern Greek', 'Grek'],
+    'he': ['Hebrew_Modern_heb', 'Hebrew (Modern)', 'Modern Hebrew', 'Hebr'],
+    'hi': ['Hindi_hin', 'Hindi', 'Hindi', 'Deva'],
+    'id': ['Indonesian_ind', 'Indonesian', 'Indonesian', 'Latn'],
+    'ja': ['Japanese_jpn', 'Japanese', 'Japanese', 'Jpan'],
+    'ko': ['Korean_kor', 'Korean', 'Korean', 'Kore'],
+    'zh': ['Mandarin_cmn', 'Mandarin', 'Mandarin Chinese', 'Hans'],
+    'fa': ['Persian_pes', 'Persian', 'Western Farsi', 'pes'],
+    'ru': ['Russian_rus', 'Russian', 'Russian', 'Cyrl'],
+    'es': ['Spanish (spa)', 'spa', 'spa', 'stan1288'],
+    'sw': ['Swahili (swh)', 'swh', 'swa', 'swah1253'],
+    'tl': ['Tagalog_tgl', 'tgl', 'Tagalog', 'Tagalog', 'Latn']
     # 'th': ['Thai (tha)', 'tha', 'tha', 'thai1261'],
     # 'tr': ['Turkish (tur)', 'tur', 'tur', 'nucl1301'],
     # 'vi': ['Vietnamese (vie)', 'vie', 'vie', 'viet1252'],
@@ -65,11 +67,11 @@ def get_root(lang):
 
 # Request HTML page for the current language
 def request(language):
-    logging.basicConfig()
-    logging.getLogger().setLevel(logging.DEBUG)
-    requests_log = logging.getLogger("requests.packages.urllib3")
-    requests_log.setLevel(logging.DEBUG)
-    requests_log.propagate = True
+    # logging.basicConfig()
+    # logging.getLogger().setLevel(logging.DEBUG)
+    # requests_log = logging.getLogger("requests.packages.urllib3")
+    # requests_log.setLevel(logging.DEBUG)
+    # requests_log.propagate = True
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     r = requests.post('http://opus.nlpl.eu/index.php', data={'src': language, 'trg': 'any', 'minsize': 'all'})
     html = r.text
@@ -110,7 +112,7 @@ def unzip_file(fname_zip, root):
     os.remove(fname_zip)
 
 # Search xmls
-def search_xmls(lang):
+def search_xmls(lang, link):
     path = get_root(lang) + 'OpenSubtitles/raw/' + lang
     current_counter = 0
     for root, dirs, files in os.walk(path):
@@ -118,25 +120,51 @@ def search_xmls(lang):
             for files in os.walk(os.path.join(root, dirname)):
                 if len(files[2]) > 0:
                     for file in files[2]:
-                        text = get_text(os.path.join(files[0],file))
-                        sample(text, lang, current_counter)
+                        text, year, tokens = get_text(os.path.join(files[0],file))
+                        sample(link, text, year, tokens, lang, current_counter)
+
+# Remove initials xmls
+def remove_xmls(lang):
+    path = get_root(lang) + 'OpenSubtitles'
+    shutil.rmtree(path)
+    os.remove(get_root(lang) + 'INFO')
+    os.remove(get_root(lang) + 'LICENSE')
+    os.remove(get_root(lang) + 'README')
+
 
 # Retrieve text
 def get_text(file):
-        f = codecs.open(file, 'r', 'utf-8')
-        xml = f.read().encode('utf-8')
-        parser = etree.XMLParser(encoding='utf-8')
-        tree = etree.XML(xml, parser)
-        text = ''
-        for el in tree:
-            if el.tag == 's':
-                try:
-                    line = etree.tostring(el, method='text')
-                    text += line.decode('utf-8').strip()
-                except:
-                    pass
-                text += '\n'
-        return text
+    f = codecs.open(file, 'r', 'utf-8')
+    xml = f.read().encode('utf-8')
+    parser = etree.XMLParser(encoding='utf-8')
+    tree = etree.XML(xml, parser)
+    text = ''
+    year = 'NA'
+    tokens = 0
+    for el in tree:
+        if el.tag == 's':
+            try:
+                line = etree.tostring(el, method='text')
+                text += line.decode('utf-8').strip()
+            except:
+                pass
+            text += '\n'
+
+        if el.tag == 'meta':
+            for child in el:
+                if child.tag == 'source':
+                    for c in child:
+                        if c.tag == 'year':
+                            year = c.text
+                            print(year)
+
+                if child.tag == 'conversion':
+                    for c in child:
+                        if c.tag == 'tokens':
+                            tokens = c.text
+                            print(tokens)
+
+    return text, year, tokens
 
 # Generate file name
 def generate_fname(lang, current_counter):
@@ -150,52 +178,72 @@ def generate_fname(lang, current_counter):
                 if int(fcounter.group(1)) > max_counter:
                     current_counter = fcounter.group(1)
                     max_counter = int(current_counter)
+            else:
+                current_counter = 0
+    if max_counter > 0:
+        current_counter = max_counter
     fname = lang_dic[lang][1] + '_nfi_' + str(int(current_counter)+1) + '.txt'
     print(get_root(lang) + fname)
     return get_root(lang) + fname
 
 # Tokenization
 def count_tokens(text):
-    result = text.lower()
-    result = re.sub('[^\w ]+', ' ', result)
-    result = re.sub('(  )+', ' ', result)
-    tokens = result.split()
-    print('Tokens: ', len(tokens))
-    return len(tokens)
+    pass
+    # result = text.lower()
+    # result = re.sub('[^\w ]+', ' ', result)
+    # result = re.sub('(  )+', ' ', result)
+    # tokens = result.split()
+    # print('Tokens: ', len(tokens))
+    # return len(tokens)
 
 # Random starting point
 def starting_point(text):
     pass
 
 # Sample
-def sample(text, lang, current_counter):
+def sample(link, text, year, tokens, lang, current_counter):
     fname = generate_fname(lang, current_counter)
-    num_tokens = count_tokens(text)
-    if num_tokens < 50000:
+    if int(tokens) < 50000:
         f1 = codecs.open(fname, 'w', 'utf-8')
-        f1.write(text)
+        meta = '''# language_name_wals:	''' + lang_dic[lang][2] + '''
+# language_name_glotto:	''' + lang_dic[lang][3] + '''
+# ISO_639-3:	''' + lang_dic[lang][1] + '''
+# year_composed:	NA
+# year_published:	''' + year + '''
+# mode:	written
+# genre_(broad):	non-fiction
+# genre_(narrow):	prepared_speeches
+# writing_system:	''' + lang_dic[lang][4] + '''
+# special_characters:	NA
+# short_description:	OpenSubtitles2018
+# source:	''' + link + '''
+# copyright_short:	http://www.opensubtitles.org/
+# copyright_long:	http://www.opensubtitles.org/ P. Lison and J. Tiedemann, 2016, OpenSubtitles2016: Extracting Large Parallel Corpora from Movie and TV Subtitles. In Proceedings of the 10th International Conference on Language Resources and Evaluation (LREC 2016)
+# sample_type:	whole
+# comments:	NA
+
+'''
+        f1.write(meta)
+        f1.write(text[:-1])
     else:
         pass
 
 def main():
     for lang in lang_dic:
-        # print(lang)
-        #
-        # iso = lang_dic[lang][1]
-        # genre = 'nfi'
-        # name_prefix = iso + '_' + genre + '_'
-        #
-        # html = request(lang)
-        # link = find_link(lang, html)
-        # print(link)
-        #
-        # fname_zip = get_root(lang) + 'subs.zip'
-        # get_file(link, fname_zip)
-        # print('Finished downloading the zip file')
-        #
-        # unzip_file(fname_zip, get_root(lang))
-        search_xmls(lang)
+        print(lang_dic[lang][2])
 
+        html = request(lang)
+        link = find_link(lang, html)
+        print(link)
+
+        fname_zip = get_root(lang) + 'subs.zip'
+        get_file(link, fname_zip)
+        print('Finished downloading the zip file')
+
+        unzip_file(fname_zip, get_root(lang))
+        search_xmls(lang, link)
+
+        remove_xmls(lang)
 
 
 
