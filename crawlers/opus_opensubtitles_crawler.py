@@ -1,6 +1,8 @@
 # Crawler for OPUS OpenSubtitles
 # Gathers *.zip files, samples from them, stores *.txt and *.xml
-# Total per language approx. 50 000 tokens
+# 100 samples
+# 50 000 tokens per sample
+# if a text has less than 50 000 tokens -> take the whole text
 
 import requests, re, os
 import logging
@@ -16,6 +18,7 @@ import random
 from lxml import etree
 from requests.exceptions import Timeout, ConnectionError
 from urllib3.exceptions import ReadTimeoutError
+from io import StringIO, BytesIO
 
 #'ber': ['Berber_Middle_Atlas (tzm)', 'tzm', 'bma', 'cent2194'],
 #'my': ['Burmese (mya)', 'mya', 'brm', 'nucl1310'],
@@ -50,11 +53,10 @@ lang_dic = {
     # 'ru': ['Russian (rus)', 'rus', 'rus', 'russ1263'],
     # 'es': ['Spanish (spa)', 'spa', 'spa', 'stan1288'],
     # 'sw': ['Swahili (swh)', 'swh', 'swa', 'swah1253'],
-    'tl': ['Tagalog (tgl)', 'tgl', 'tag', 'taga1270']
+    'tl': ['Tagalog_tgl', 'tgl', 'tag', 'taga1270']
     # 'th': ['Thai (tha)', 'tha', 'tha', 'thai1261'],
     # 'tr': ['Turkish (tur)', 'tur', 'tur', 'nucl1301'],
     # 'vi': ['Vietnamese (vie)', 'vie', 'vie', 'viet1252'],
-
 }
 
 # Root path
@@ -71,7 +73,7 @@ def request(language):
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     r = requests.post('http://opus.nlpl.eu/index.php', data={'src': language, 'trg': 'any', 'minsize': 'all'})
     html = r.text
-    print(html)
+    print('HTML loaded')
     return html
 
 # Find link to the *.zip with OpenSubtitles, the newest version possible
@@ -102,47 +104,98 @@ def get_file(url, fname):
 
 # Unzip file
 def unzip_file(fname_zip, root):
-    print(fname_zip)
-    print(root)
     zip_ref = zipfile.ZipFile(fname_zip, 'r')
     zip_ref.extractall(root)
     zip_ref.close()
     os.remove(fname_zip)
 
-# Count tokens
-def count_tokens(lang):
+# Search xmls
+def search_xmls(lang):
     path = get_root(lang) + 'OpenSubtitles/raw/' + lang
+    current_counter = 0
     for root, dirs, files in os.walk(path):
-        for dirname in sorted(dirs):
-            print(dirname)
+        for dirname in sorted(dirs, reverse=True):
+            for files in os.walk(os.path.join(root, dirname)):
+                if len(files[2]) > 0:
+                    for file in files[2]:
+                        text = get_text(os.path.join(files[0],file))
+                        sample(text, lang, current_counter)
 
+# Retrieve text
+def get_text(file):
+        f = codecs.open(file, 'r', 'utf-8')
+        xml = f.read().encode('utf-8')
+        parser = etree.XMLParser(encoding='utf-8')
+        tree = etree.XML(xml, parser)
+        text = ''
+        for el in tree:
+            if el.tag == 's':
+                try:
+                    line = etree.tostring(el, method='text')
+                    text += line.decode('utf-8').strip()
+                except:
+                    pass
+                text += '\n'
+        return text
 
-# Sampling
-def sampling():
+# Generate file name
+def generate_fname(lang, current_counter):
+    path = get_root(lang)
+    max_counter = 0
+    search_fcounter = re.compile(lang_dic[lang][1] + '_nfi_' + '([0-9]+)(\.txt)?')
+    for root, dirs, files in os.walk(path):
+        for file in files:
+            fcounter = re.search(search_fcounter, file)
+            if fcounter is not None:
+                if int(fcounter.group(1)) > max_counter:
+                    current_counter = fcounter.group(1)
+                    max_counter = int(current_counter)
+    fname = lang_dic[lang][1] + '_nfi_' + str(int(current_counter)+1) + '.txt'
+    print(get_root(lang) + fname)
+    return get_root(lang) + fname
+
+# Tokenization
+def count_tokens(text):
+    result = text.lower()
+    result = re.sub('[^\w ]+', ' ', result)
+    result = re.sub('(  )+', ' ', result)
+    tokens = result.split()
+    print('Tokens: ', len(tokens))
+    return len(tokens)
+
+# Random starting point
+def starting_point(text):
     pass
 
+# Sample
+def sample(text, lang, current_counter):
+    fname = generate_fname(lang, current_counter)
+    num_tokens = count_tokens(text)
+    if num_tokens < 50000:
+        f1 = codecs.open(fname, 'w', 'utf-8')
+        f1.write(text)
+    else:
+        pass
 
 def main():
     for lang in lang_dic:
-        print(lang)
+        # print(lang)
+        #
+        # iso = lang_dic[lang][1]
+        # genre = 'nfi'
+        # name_prefix = iso + '_' + genre + '_'
+        #
+        # html = request(lang)
+        # link = find_link(lang, html)
+        # print(link)
+        #
+        # fname_zip = get_root(lang) + 'subs.zip'
+        # get_file(link, fname_zip)
+        # print('Finished downloading the zip file')
+        #
+        # unzip_file(fname_zip, get_root(lang))
+        search_xmls(lang)
 
-        iso = lang_dic[lang][1]
-        genre = 'nfi'
-        name_prefix = iso + '_' + genre + '_'
-
-        html = request(lang)
-        link = find_link(lang, html)
-        print(link)
-
-        fname_zip = get_root(lang) + 'subs.zip'
-
-        get_file(link, fname_zip)
-
-        print('Finished downloading the zip file')
-
-        unzip_file(fname_zip, get_root(lang))
-
-        count_tokens(lang)
 
 
 
